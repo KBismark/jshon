@@ -1,0 +1,10 @@
+/*
+Please do not add your style rules in this file.
+They will be over-written with the inline styles
+in your app. The compiler removes all inline styles
+automatically and replace them with css class names.
+The style rules for each class name is placed here in 
+this file. See https://github.com/KBismark/remove-style
+repo for how this feature works.
+*/
+.jsh-a{text-align:center}.jsh-b{color:#fff}.jsh-c{color:#ddd}.jsh-d{font-size:18px}.jsh-e{color:green}.jsh-f{font-weight:bold}.jsh-g{position:absolute}.jsh-h{bottom:20px}.jsh-i{left:0}.jsh-j{right:0}

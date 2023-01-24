@@ -1,0 +1,15 @@
+{
+  "name": "jshon-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node ./index.js",
+    "dev": "node ./jshon-compiler/index.js"
+  },
+  "dependencies": {},
+  "author": "",
+  "license": "MIT",
+  "ssr":true
+}
