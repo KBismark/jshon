@@ -529,15 +529,25 @@
     var listeners = [];
     var attributes = {};
     var classNames = [];
-    var valueType;
-    if ((styleSet = attrkeys.indexOf("style")) >= 0) {
-      attrkeys.splice(styleSet, 1);
-      if (typeof attr.style == "string") {
-        //Set styles from JSHON.attr
-        domNode.style = attr.style;
-      }
+    var valueType,
+      attrStyles = {};
+    if (typeof attr.style == "object" && null != attr.style) {
+      //Set styles from JSHON.attr
+      attrStyles = {
+        ...attr.style,
+      };
+      attrkeys.splice(attrkeys.indexOf("style"), 1);
+      styleSet = true;
+      //domNode.style = attr.style;
     }
-    styleSet = false;
+    // if ((styleSet = attrkeys.indexOf("style")) >= 0) {
+    //   attrkeys.splice(styleSet, 1);
+    //   if (typeof attr.style == "string"){
+    //     //Set styles from JSHON.attr
+    //     domNode.style = attr.style;
+    //   }
+    // }
+    // styleSet = false;
     if ((classSet = attrkeys.indexOf("class")) >= 0) {
       attrkeys.splice(classSet, 1);
       classSet = true;
@@ -574,11 +584,15 @@
         null != elements[refKey].style
       ) {
         refElAttrKeys.splice(refElAttrKeys.indexOf("style"), 1);
-        var styleKeys = Object.keys(elements[refKey].style);
-        //Set styles from `keyed element`
-        for (i = 0; i < styleKeys.length; i++) {
-          domNode.style[styleKeys[i]] = elements[refKey].style[styleKeys[i]];
-        }
+        attrStyles = {
+          ...attrStyles,
+          ...elements[refKey].style,
+        };
+        // var styleKeys = Object.keys(elements[refKey].style);
+        // //Set styles from `keyed element`
+        // for (i = 0; i < styleKeys.length; i++) {
+        //   domNode.style[styleKeys[i]] = elements[refKey].style[styleKeys[i]];
+        // }
         styleSet = true;
       }
       //Set any other attribute from `keyed element`
@@ -610,6 +624,13 @@
         classNames.push(domNode.classList[i]);
       }
     }
+    if (styleSet) {
+      //Set the styles
+      var styleKeys = Object.keys(attrStyles);
+      for (i = 0; i < styleKeys.length; i++) {
+        domNode.style[styleKeys[i]] = attrStyles[styleKeys[i]];
+      }
+    }
     //Set any other attribute from JSHON object
     for (i = 0; i < attrkeys.length; i++) {
       valueType = typeof attr[attrkeys[i]];
@@ -617,45 +638,23 @@
         domNode.setAttribute(attrkeys[i], attr[attrkeys[i]]);
       } else {
         domNode[attrkeys[i]] = attr[attrkeys[i]];
-      }
-      attributes[attrkeys[i]] = attr[attrkeys[i]];
-      if (valueType == "function") {
-        //Keep names of listeners set on node.
-        //Listeners are reset to `null` before
-        //node is detached from the DOM.
-        if (listeners.indexOf(attrkeys[i]) < 0) {
-          listeners.push(attrkeys[i]);
-        }
-      }
-    }
-
-    //New styles can be set with objects only in runtime.
-    //Keep intial styles in object form instead of strings.
-    var stylesObject = {},
-      key,
-      matched;
-    if (domNode.attributes.style) {
-      var styles = domNode.attributes.style.value.replace(/.$/, "").split("; ");
-      for (i = 0; i < styles.length; i++) {
-        styles[i] = styles[i].split(":");
-        key = styles[i][0].match(/-[a-z]/g);
-        if (key) {
-          while (key.length > 0) {
-            matched = key.shift();
-            styles[i][0] = styles[i][0].replace(
-              matched,
-              matched[1].toUpperCase()
-            );
+        if (valueType == "function") {
+          //Keep names of listeners set on node.
+          //Listeners are reset to `null` before
+          //node is detached from the DOM.
+          if (listeners.indexOf(attrkeys[i]) < 0) {
+            listeners.push(attrkeys[i]);
           }
         }
-        stylesObject[styles[i][0]] = styles[i][1].trim();
       }
+      attributes[attrkeys[i]] = attr[attrkeys[i]];
     }
+
     return {
       key: refKey,
       keyed: keyed,
       listeners: listeners,
-      styles: stylesObject,
+      styles: attrStyles, 
       attributes: attributes,
       classNames: classNames,
     };
