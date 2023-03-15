@@ -26,6 +26,10 @@
     },
     currentPage: null,
   };
+  //This shall hold new updates during rendering mode. 
+  //Those of such updates that can be merged in the current cycle
+  //shall be merged
+  var toNextCycle = {exists:{},SACids:{},components:[null],args:{},styles:{},classes:{},attributes:{}};
   //This is hopefully to be used for safe writes and reads directly to and from the dom.
   var outOfScopeTasks = {
     write: [],
@@ -538,16 +542,7 @@
       };
       attrkeys.splice(attrkeys.indexOf("style"), 1);
       styleSet = true;
-      //domNode.style = attr.style;
     }
-    // if ((styleSet = attrkeys.indexOf("style")) >= 0) {
-    //   attrkeys.splice(styleSet, 1);
-    //   if (typeof attr.style == "string"){
-    //     //Set styles from JSHON.attr
-    //     domNode.style = attr.style;
-    //   }
-    // }
-    // styleSet = false;
     if ((classSet = attrkeys.indexOf("class")) >= 0) {
       attrkeys.splice(classSet, 1);
       classSet = true;
@@ -559,7 +554,6 @@
     } else {
       attrkeys.splice(attrkeys.indexOf("key"), 1);
     }
-    //if(typeof (attr.key)=="string"&&attr.key.length>0/** If node was keyed */){
     var refKey = attr.key,
       keyed = true;
 
@@ -853,13 +847,39 @@
     var newpage = styleClassAttrUpdates.newpage;
     var page = standAloneApps[symbolIdentifier].currentPage;
     var styleKeys, currentStyles, elementKeys, i, k;
-    var ids = Object.keys(renderCycle.attributes),
+    var ids = Object.keys({
+      ...renderCycle.attributes,
+      ...toNextCycle.SACids
+    }),
       j;
     var newStyles, newAttrs, element, value, current, index;
     var addClassnames, removeClassnames, currentClassnames;
-    var updateClassnames = false;
+    var classNameUpdates,classNameUpdateKeys;
     for (j = 0; j < ids.length; j++) {
-      elementKeys = Object.keys(renderCycle.attributes[ids[j]]);
+      states[ids[j]][symbolIdentifier].styleChanged = false;
+      states[ids[j]][symbolIdentifier].classChanged = false;
+      states[ids[j]][symbolIdentifier].attrChanged = false;
+      var awaited = {
+        styles:{},
+        classes:{},
+        attributes:{}
+      }
+      if(toNextCycle.exists[ids[j]]){
+        awaited.styles = toNextCycle.styles[ids[j]];
+        awaited.attributes = toNextCycle.attributes[ids[j]];
+        awaited.classes = toNextCycle.classes[ids[j]];
+        toNextCycle.styles[ids[j]] = {};
+        toNextCycle.attributes[ids[j]] = {};
+        toNextCycle.classes[ids[j]] = {};
+        
+      };
+      if(!renderCycle.attributes[ids[j]]){
+        renderCycle.attributes[ids[j]]=toNextCycle.SACids[ids[j]]
+      }
+      elementKeys = Object.keys({
+        ...(toNextCycle.SACids[ids[j]]||{}),
+        ...renderCycle.attributes[ids[j]]
+      });
       if (
         !newpage &&
         !states[ids[j]][symbolIdentifier].isDestroyed &&
@@ -870,9 +890,12 @@
           if (states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]) {
             //Styles
             currentStyles =
-              states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
-                .styles;
-            newStyles = renderCycle.attributes[ids[j]][elementKeys[k]].styles;
+            states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].styles;
+            newStyles = {
+              ...(awaited.styles[elementKeys[k]]||{}),
+              ...(renderCycle.attributes[ids[j]][elementKeys[k]].styles||{})
+            };
+
             styleKeys = Object.keys(newStyles);
             if (styleKeys.length > 0) {
               element = findDomNode(
@@ -888,45 +911,45 @@
                 }
               }
             }
+
             //Classnames
             currentClassnames =
-              states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
-                .classNames;
-            addClassnames = Object.keys(
-              renderCycle.attributes[ids[j]][elementKeys[k]].classNames.add
-            );
-            removeClassnames = Object.keys(
-              renderCycle.attributes[ids[j]][elementKeys[k]].classNames.remove
-            );
-            for (i = 0; i < removeClassnames.length; i++) {
-              index = currentClassnames.indexOf(removeClassnames[i]);
-              if (index > -1) {
-                updateClassnames = true;
-                currentClassnames.splice(index, 1);
-              }
-              index = addClassnames.indexOf(removeClassnames[i]);
-              if (index > -1) {
-                addClassnames.splice(index, 1);
-              }
+            states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].classNames;
+            classNameUpdates = {
+              ...(awaited.classes[elementKeys[k]]||{}),
+              ...(renderCycle.attributes[ids[j]][elementKeys[k]].classNames||{})
+            };
+            var currentClassObject = {};
+            for (i = 0; i < currentClassnames.length; i++) {
+              currentClassObject[currentClassnames[i]] = true;
             }
-            if (addClassnames.length > 0) {
-              for (i = 0; i < addClassnames.length; i++) {
-                if (currentClassnames.indexOf(addClassnames[i]) < 0) {
-                  updateClassnames = true;
-                  currentClassnames.push(addClassnames[i]);
+            var mergedClass = hasValuesChanged(currentClassObject,classNameUpdates);
+            if(mergedClass.hasChanged){
+              classNameUpdateKeys = Object.keys(mergedClass.value);
+              //Reset currentClassnames to an empty array and fill it with current classnames
+              currentClassnames = [];
+              for (i = 0; i < classNameUpdateKeys.length; i++) {
+                if(mergedClass.value[classNameUpdateKeys[i]]){
+                  //Add to classnames
+                  currentClassnames.push(classNameUpdateKeys[i]);
                 }
               }
-            }
-            if (updateClassnames) {
-              if (!element) {
-                element = findDomNode(
-                  states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
-                    .positioningChainArray,
-                  states[ids[j]][symbolIdentifier].domNode
-                );
+              if (currentClassnames.length) {
+                if (!element) {
+                  element = findDomNode(
+                    states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
+                      .positioningChainArray,
+                    states[ids[j]][symbolIdentifier].domNode
+                  );
+                }
+                //Update the class attribute with the new class value
+                element.setAttribute("class", currentClassnames.join(" "));
               }
-              element.setAttribute("class", currentClassnames.join(" "));
+              //Update the keyed element object
+              states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
+              .classNames = currentClassnames;
             }
+            
 
             //Attributes
             newAttrs = Object.keys(
@@ -2955,13 +2978,44 @@
     }
     return componentRef;
   }
+  //Compares two objects and returns a truthy value
+  //dependeing on whether values of both are same or not
+  function hasValuesChanged(currentState,update){
+    var updateKeys = Object.keys(update);
+    if (Object.keys(currentState).length < updateKeys.length) {
+      return {
+        hasChanged:true,
+        value:{
+          ...currentState,
+          ...update
+        }
+      };
+    }
+    var merged = {
+      ...currentState,
+      ...update
+    };
+    for (var i = 0; i < updateKeys.length; i++) {
+      if (merged[updateKeys[i]] !== currentState[updateKeys[i]]) {
+        return {
+          hasChanged:true,
+          value:merged
+        };
+      }
+    }
+    return {
+      hasChanged:false,
+      value:currentState
+    };;
+  }
   //Set states of components. This automatically updates
   //the dynamic nodes in the component.
   function setState(This, state, update) {
-    if (renderCycle.renderingMode) {
-      return; //Discard state settings when we are rendering a component.
-      //Normally, states must not be set during such moments.
-    }
+    // if (renderCycle.renderingMode) {
+
+    //   return; //Discard state settings when we are rendering a component.
+    //   //Normally, states must not be set during such moments.
+    // }
     var mustUpdate = false;
     if (!This[symbolIdentifier].data) {
       return; //Ignore state settings if first argument is not a component's object.
@@ -2970,13 +3024,6 @@
     }
     if (This.state /** State is defined */) {
       if (state) {
-        var currentState = This.state,
-          i;
-        //This updates the state object.
-        This.state = {
-          ...currentState,
-          ...state,
-        };
         //Update of the component itself is done only if it is not detached/unmounted.
         if (
           !This[symbolIdentifier]
@@ -2986,18 +3033,10 @@
             //We check if the state object was really updated by comparing the previous
             //state object with the updated state object.
             //No change means no need to update component,
-            //else we update the dynamic parts/nodes of the component.
-            if (Object.keys(currentState).length != Object.keys(state).length) {
-              mustUpdate = true;
-            } else {
-              var stateKeys = Object.keys(This.state);
-              for (i = 0; i < stateKeys.length; i++) {
-                if (This.state[stateKeys[i]] !== currentState[stateKeys[i]]) {
-                  mustUpdate = true;
-                  break;
-                }
-              }
-            }
+            //else we update the dynamic nodes of the component.
+            var newState = hasValuesChanged(This.state,state);
+            mustUpdate = newState.hasChanged;
+            This.state = newState.value;
           } else {
             mustUpdate = update;
           }
@@ -3021,7 +3060,36 @@
       !This[symbolIdentifier].isDestroyed
       /** Trigger re-render if component is not detached. */
     ) {
-      setStateRenderer(This[symbolIdentifier].id);
+      var componentId = This[symbolIdentifier].id;
+      
+      if (!renderCycle.renderingMode||states[componentId][symbolIdentifier].stateChanged) {
+        //Set the state change switch on.
+        states[componentId][symbolIdentifier].stateChanged = true;
+
+        //If we are currently not in a rendering process, shedule one and
+        //register this component to be updated in the next rendering cycle.
+        setStateRenderer(componentId);
+      }else{
+        //If we are currently in a rendering process, 
+        //let's keep this update to allow current update works.
+        //We update this component after this cycle if and only if
+        //this component is not among the current rendering components.
+        if(!toNextCycle.exists[componentId]){
+          toNextCycle.exists[componentId] = toNextCycle.components.length;
+          toNextCycle.components.push(componentId);
+          toNextCycle.args[componentId] = null;
+          toNextCycle.styles[componentId] = {};
+          toNextCycle.classes[componentId] = {};
+          toNextCycle.attributes[componentId] = {};
+          toNextCycle.SACids[componentId] = {};
+        }else{
+          //Update the component's id value in the array. 
+          //It might be null due to styles/classes/attributes updates
+          var componentPosition = toNextCycle.exists[componentId];
+          toNextCycle.components[componentPosition] = componentId;
+        }
+      }
+      
     }
   }
 
@@ -3146,123 +3214,233 @@
       }
     }
   }
+
   //Add or remove classnames on elements of components.
   function setClass(This, key, classObject) {
-    if (renderCycle.renderingMode) {
-      return;
-    }
-    var mustUpdate = false;
+    var componentId = This[symbolIdentifier].id;
     if (!This[symbolIdentifier].data) {
       return;
     }
     if (This[symbolIdentifier].keyedElements[key]) {
-      if (!renderCycle.attributes[This[symbolIdentifier].id]) {
-        renderCycle.attributes[This[symbolIdentifier].id] = {};
-        renderCycle.update[This[symbolIdentifier].id] =
-          This[symbolIdentifier].id;
+      if (!renderCycle.attributes[componentId]) {
+        renderCycle.attributes[componentId] = {};
+        renderCycle.update[componentId] =
+          componentId;
       }
-      if (!renderCycle.attributes[This[symbolIdentifier].id][key]) {
-        renderCycle.attributes[This[symbolIdentifier].id][key] = {
+      if (!renderCycle.attributes[componentId][key]) {
+        renderCycle.attributes[componentId][key] = {
           styles: {},
-          classNames: {
-            add: {},
-            remove: {},
-          },
+          classNames: {},
           attributes: {},
         };
       }
-      var i;
+      var i,newClassUpdate = {};
       if (classObject.add) {
         for (i = 0; i < classObject.add.length; i++) {
-          renderCycle.attributes[This[symbolIdentifier].id][key].classNames.add[
-            classObject.add[i]
-          ] = true;
-          mustUpdate = true;
+          newClassUpdate[classObject.add[i]] = true;
         }
       }
       if (classObject.remove) {
         for (i = 0; i < classObject.remove.length; i++) {
-          renderCycle.attributes[This[symbolIdentifier].id][
-            key
-          ].classNames.remove[classObject.remove[i]] = true;
-          mustUpdate = true;
+          newClassUpdate[classObject.remove[i]] = false;
         }
       }
-      if (mustUpdate) {
-        startNewCycle();
+
+      if (classObject.remove.length||classObject.add.length) {
+        
+        if (!renderCycle.renderingMode||This[symbolIdentifier].classChanged) {
+          //Set the state change switch on.
+          This[symbolIdentifier].classChanged = true;
+
+          renderCycle.attributes[componentId][key].classNames = {
+            ...renderCycle.attributes[componentId][key].classNames,
+            ...newClassUpdate
+          }
+          startNewCycle();
+
+        }else{
+          //If we are currently in a rendering process, 
+            //let's keep this update to allow current update works.
+            //We update this component after this cycle if and only if
+            //this component is not among the current rendering components.
+            if(!toNextCycle.exists[componentId]){
+              toNextCycle.exists[componentId] = toNextCycle.components.length;
+              toNextCycle.components.push(null);
+              toNextCycle.styles[componentId] = {};
+              toNextCycle.attributes[componentId] = {};
+              toNextCycle.classes[componentId] = {};
+              toNextCycle.classes[componentId][key] = newClassUpdate;
+              toNextCycle.SACids[componentId] = {};
+            }else{
+              //If component is already registered for next updates,
+              //merge current class update value with the new class update value.
+              if(!toNextCycle.classes[componentId][key]){
+                toNextCycle.classes[componentId][key] = newClassUpdate;
+              }else{
+                toNextCycle.classes[componentId][key] = {
+                  ...toNextCycle.classes[componentId][key],
+                  ...newClassUpdate
+                };
+              }
+              
+            }
+            toNextCycle.SACids[componentId][key]=true;
+        }
       }
+      
     }
   }
   function setStyle(This, key, styleObject) {
-    if (renderCycle.renderingMode) {
-      return;
-    }
-    This = states[This[symbolIdentifier].id];
+    var componentId = This[symbolIdentifier].id;
+    This = states[componentId];
     if (!This[symbolIdentifier].data) {
       return;
     }
     if (This[symbolIdentifier].keyedElements[key]) {
-      if (!renderCycle.attributes[This[symbolIdentifier].id]) {
-        renderCycle.attributes[This[symbolIdentifier].id] = {};
-        renderCycle.update[This[symbolIdentifier].id] =
-          This[symbolIdentifier].id;
+      if (!renderCycle.attributes[componentId]) {
+        renderCycle.attributes[componentId] = {};
+        renderCycle.update[componentId] =
+          componentId;
       }
-      if (!renderCycle.attributes[This[symbolIdentifier].id][key]) {
-        renderCycle.attributes[This[symbolIdentifier].id][key] = {
+      if (!renderCycle.attributes[componentId][key]) {
+        renderCycle.attributes[componentId][key] = {
           styles: {},
-          classNames: {
-            add: {},
-            remove: {},
-          },
+          classNames: {},
           attributes: {},
         };
       }
-      renderCycle.attributes[This[symbolIdentifier].id][key].styles = {
-        ...renderCycle.attributes[This[symbolIdentifier].id][key].styles,
-        ...styleObject,
-      };
-      startNewCycle();
+      //Shedule for style updates if style values has changed.
+      var currentNodeStyles = This[symbolIdentifier].keyedElements[key].styles;
+      var newStyles = hasValuesChanged({
+        ...currentNodeStyles,
+        ...renderCycle.attributes[componentId][key].styles
+      },styleObject);
+      if(newStyles.hasChanged){
+        
+        if (!renderCycle.renderingMode||This[symbolIdentifier].styleChanged) {
+          //Set the state change switch on.
+          This[symbolIdentifier].styleChanged = true;
+
+          //If we are currently not in a rendering process, shedule one and
+          //register this component to be updated in the next rendering cycle.
+          renderCycle.attributes[componentId][key].styles = {
+            ...renderCycle.attributes[componentId][key].styles,
+            ...styleObject
+          }
+          startNewCycle();
+        }else{
+          //If we are currently in a rendering process, 
+          //let's keep this update to allow current update works.
+          //We update this component after this cycle if and only if
+          //this component is not among the current rendering components.
+          if(!toNextCycle.exists[componentId]){
+            toNextCycle.exists[componentId] = toNextCycle.components.length;
+            toNextCycle.components.push(null);
+            toNextCycle.classes[componentId] = {};
+            toNextCycle.attributes[componentId] = {};
+            toNextCycle.styles[componentId] = {};
+            toNextCycle.styles[componentId][key] = {...styleObject};
+            toNextCycle.SACids[componentId] = {};
+          }else{
+            //If component is already registered for next updates,
+            //merge current style update value with the new style update value.
+            if(!toNextCycle.styles[componentId][key]){
+              toNextCycle.styles[componentId][key] = {...styleObject};
+            }else{
+              toNextCycle.styles[componentId][key] = {
+                ...toNextCycle.styles[componentId][key],
+                ...styleObject
+              };
+            }
+            
+          }
+          toNextCycle.SACids[componentId][key]=true;
+        }
+      }
     }
   }
   function setAttribute(This, key, attrObject) {
-    if (renderCycle.renderingMode) {
-      return;
-    }
     if (!This[symbolIdentifier].data) {
       return;
     }
+    var componentId = This[symbolIdentifier].id;
     if (This[symbolIdentifier].keyedElements[key]) {
-      if (!renderCycle.attributes[This[symbolIdentifier].id]) {
-        renderCycle.attributes[This[symbolIdentifier].id] = {};
-        renderCycle.update[This[symbolIdentifier].id] =
-          This[symbolIdentifier].id;
+      if (!renderCycle.attributes[componentId]) {
+        renderCycle.attributes[componentId] = {};
+        renderCycle.update[componentId] =
+          componentId;
       }
-      if (!renderCycle.attributes[This[symbolIdentifier].id][key]) {
-        renderCycle.attributes[This[symbolIdentifier].id][key] = {
+      if (!renderCycle.attributes[componentId][key]) {
+        renderCycle.attributes[componentId][key] = {
           styles: {},
-          classNames: {
-            add: {},
-            remove: {},
-          },
+          classNames: {},
           attributes: {},
         };
       }
-      renderCycle.attributes[This[symbolIdentifier].id][key].attributes = {
-        ...renderCycle.attributes[This[symbolIdentifier].id][key].attributes,
-        ...attrObject,
-      };
-      startNewCycle();
+
+      var newAttributes = hasValuesChanged(renderCycle.attributes[componentId][key].attributes,attrObject);
+
+      if(newAttributes.hasChanged){
+        
+        if (!renderCycle.renderingMode||This[symbolIdentifier].attrChanged) {
+          //Set the state change switch on.
+          This[symbolIdentifier].attrChanged = true;
+
+          //If we are currently not in a rendering process, shedule one and
+          //register this component to be updated in the next rendering cycle.
+          This[symbolIdentifier].keyedElements[key].attributes = newAttributes.value;
+          renderCycle.attributes[componentId][key].attributes = {
+            ...renderCycle.attributes[componentId][key].attributes,
+            ...attrObject
+          }
+          //Shedule for attribute updates if attribute values has changed.
+          startNewCycle();
+        }else{
+          
+          //If we are currently in a rendering process, 
+          //let's keep this update to allow current update works.
+          //We update this component after this cycle if and only if
+          //this component is not among the current rendering components.
+          if(!toNextCycle.exists[componentId]){
+            toNextCycle.exists[componentId] = toNextCycle.components.length;
+            toNextCycle.components.push(null);
+            toNextCycle.classes[componentId] = {};
+            toNextCycle.attributes[componentId] = {};
+            toNextCycle.attributes[componentId][key] = {...attrObject};
+            toNextCycle.styles[componentId] = {};
+            toNextCycle.SACids[componentId] = {};
+          }else{
+            //If component is already registered for next updates,
+            //merge current style update value with the new style update value.
+            if(!toNextCycle.attributes[componentId][key]){
+              toNextCycle.attributes[componentId][key] = {...styleObject};
+            }else{
+              toNextCycle.attributes[componentId][key] = {
+                ...toNextCycle.attributes[componentId][key],
+                ...styleObject
+              };
+            }
+            
+          }
+          toNextCycle.SACids[componentId][key]=true;
+        }
+      }
     }
   }
+
+  //Returns a keyed element from a component
   function getElement(componentRef, key) {
     if (componentRef[symbolIdentifier]) {
       componentRef = states[componentRef[symbolIdentifier].id];
+      //If component is detached, return null.
       if (componentRef[symbolIdentifier].isDestroyed) {
         return null;
       }
+      //If no key value is provided, return the head node of this component
       if (typeof key !== "string") {
         return componentRef[symbolIdentifier].domNode;
       }
+      //Traverse from head node to the keyed element and return
       if (componentRef[symbolIdentifier].keyedElements[key]) {
         return findDomNode(
           componentRef[symbolIdentifier].keyedElements[key]
