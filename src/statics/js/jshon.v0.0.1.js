@@ -853,8 +853,8 @@
     }),
       j;
     var newStyles, newAttrs, element, value, current, index;
-    var addClassnames, removeClassnames, currentClassnames;
     var classNameUpdates,classNameUpdateKeys,newAttrsKeys;
+    var currentClassObject, mergedClass, currentClassnames;
     for (j = 0; j < ids.length; j++) {
       states[ids[j]][symbolIdentifier].styleChanged = false;
       states[ids[j]][symbolIdentifier].classChanged = false;
@@ -932,11 +932,11 @@
             //Classnames
             currentClassnames =
             states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].classNames;
-            var currentClassObject = {};
+            currentClassObject = {};
             for (i = 0; i < currentClassnames.length; i++) {
               currentClassObject[currentClassnames[i]] = true;
             }
-            var mergedClass = hasValuesChanged(currentClassObject,classNameUpdates);
+            mergedClass = hasValuesChanged(currentClassObject,classNameUpdates);
             if(mergedClass.hasChanged){
               classNameUpdateKeys = Object.keys(mergedClass.value);
               //Reset currentClassnames to an empty array and fill it with current classnames
@@ -1020,50 +1020,62 @@
         //re-rendiring or page is revisited.
         for (k = 0; k < elementKeys.length; k++) {
           if (states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]) {
+
+            if(renderCycle.attributes[ids[j]][elementKeys[k]]){
+              newStyles = {
+                ...(awaited.styles[elementKeys[k]]||{}),
+                ...(renderCycle.attributes[ids[j]][elementKeys[k]].styles||{})
+              };
+              classNameUpdates = {
+                ...(awaited.classes[elementKeys[k]]||{}),
+                ...(renderCycle.attributes[ids[j]][elementKeys[k]].classNames||{})
+              };
+              newAttrs = {
+                ...(awaited.attributes[elementKeys[k]]||{}),
+                ...(renderCycle.attributes[ids[j]][elementKeys[k]].attributes||{})
+              };
+            }else{
+              newStyles = awaited.styles[elementKeys[k]]
+              classNameUpdates = awaited.classes[elementKeys[k]]
+              newAttrs = awaited.attributes[elementKeys[k]]
+            }
             //Styles
             states[ids[j]][symbolIdentifier].keyedElements[
               elementKeys[k]
             ].styles = {
-              ...states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
-                .styles,
-              ...renderCycle.attributes[ids[j]][elementKeys[k]].styles,
+              ...states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].styles,
+              ...newStyles,
             };
             //Classnames
             currentClassnames =
-              states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
-                .classNames;
-            addClassnames = Object.keys(
-              renderCycle.attributes[ids[j]][elementKeys[k]].classNames.add
-            );
-            removeClassnames = Object.keys(
-              renderCycle.attributes[ids[j]][elementKeys[k]].classNames.remove
-            );
-            for (i = 0; i < removeClassnames.length; i++) {
-              index = currentClassnames.indexOf(removeClassnames[i]);
-              if (index > -1) {
-                currentClassnames.splice(index, 1);
-              }
-              index = addClassnames.indexOf(removeClassnames[i]);
-              if (index > -1) {
-                addClassnames.splice(index, 1);
+            states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].classNames;
+            currentClassObject = {};
+            for (i = 0; i < currentClassnames.length; i++) {
+              currentClassObject[currentClassnames[i]] = true;
+            }
+            mergedClass = {
+              ...currentClassObject,
+              ...classNameUpdates
+            };
+            classNameUpdateKeys = Object.keys(mergedClass);
+            //Reset currentClassnames to an empty array and fill it with current classnames
+            currentClassnames = [];
+            for (i = 0; i < classNameUpdateKeys.length; i++) {
+              if(mergedClass[classNameUpdateKeys[i]]){
+                //Add to classnames
+                currentClassnames.push(classNameUpdateKeys[i]);
               }
             }
-            if (addClassnames.length > 0) {
-              for (i = 0; i < addClassnames.length; i++) {
-                if (currentClassnames.indexOf(addClassnames[i]) < 0) {
-                  currentClassnames.push(addClassnames[i]);
-                }
-              }
-            }
+            states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].classNames = currentClassnames;
+
             //Attributes
             newAttrs =
               renderCycle.attributes[ids[j]][elementKeys[k]].attributes;
             states[ids[j]][symbolIdentifier].keyedElements[
               elementKeys[k]
             ].attributes = {
-              ...states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
-                .attributes,
-              ...renderCycle.attributes[ids[j]][elementKeys[k]].attributes,
+              ...states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].attributes,
+              ...newAttrs,
             };
           }
         }
