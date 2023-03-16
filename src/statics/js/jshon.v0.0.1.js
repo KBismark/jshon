@@ -854,7 +854,7 @@
       j;
     var newStyles, newAttrs, element, value, current, index;
     var addClassnames, removeClassnames, currentClassnames;
-    var classNameUpdates,classNameUpdateKeys;
+    var classNameUpdates,classNameUpdateKeys,newAttrsKeys;
     for (j = 0; j < ids.length; j++) {
       states[ids[j]][symbolIdentifier].styleChanged = false;
       states[ids[j]][symbolIdentifier].classChanged = false;
@@ -874,12 +874,15 @@
         
       };
       if(!renderCycle.attributes[ids[j]]){
-        renderCycle.attributes[ids[j]]=toNextCycle.SACids[ids[j]]
+        renderCycle.attributes[ids[j]]=toNextCycle.SACids[ids[j]];
+        elementKeys = Object.keys(toNextCycle.SACids[ids[j]]);
+      }else{
+        elementKeys = Object.keys({
+          ...(toNextCycle.SACids[ids[j]]||{}),
+          ...renderCycle.attributes[ids[j]]
+        });
       }
-      elementKeys = Object.keys({
-        ...(toNextCycle.SACids[ids[j]]||{}),
-        ...renderCycle.attributes[ids[j]]
-      });
+      
       if (
         !newpage &&
         !states[ids[j]][symbolIdentifier].isDestroyed &&
@@ -888,13 +891,27 @@
         for (k = 0; k < elementKeys.length; k++) {
           element = null;
           if (states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]) {
+            if(renderCycle.attributes[ids[j]][elementKeys[k]]){
+              newStyles = {
+                ...(awaited.styles[elementKeys[k]]||{}),
+                ...(renderCycle.attributes[ids[j]][elementKeys[k]].styles||{})
+              };
+              classNameUpdates = {
+                ...(awaited.classes[elementKeys[k]]||{}),
+                ...(renderCycle.attributes[ids[j]][elementKeys[k]].classNames||{})
+              };
+              newAttrs = {
+                ...(awaited.attributes[elementKeys[k]]||{}),
+                ...(renderCycle.attributes[ids[j]][elementKeys[k]].attributes||{})
+              };
+            }else{
+              newStyles = awaited.styles[elementKeys[k]]
+              classNameUpdates = awaited.classes[elementKeys[k]]
+              newAttrs = awaited.attributes[elementKeys[k]]
+            }
             //Styles
             currentStyles =
             states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].styles;
-            newStyles = {
-              ...(awaited.styles[elementKeys[k]]||{}),
-              ...(renderCycle.attributes[ids[j]][elementKeys[k]].styles||{})
-            };
 
             styleKeys = Object.keys(newStyles);
             if (styleKeys.length > 0) {
@@ -915,10 +932,6 @@
             //Classnames
             currentClassnames =
             states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].classNames;
-            classNameUpdates = {
-              ...(awaited.classes[elementKeys[k]]||{}),
-              ...(renderCycle.attributes[ids[j]][elementKeys[k]].classNames||{})
-            };
             var currentClassObject = {};
             for (i = 0; i < currentClassnames.length; i++) {
               currentClassObject[currentClassnames[i]] = true;
@@ -952,20 +965,18 @@
             
 
             //Attributes
-            newAttrs = Object.keys(
-              renderCycle.attributes[ids[j]][elementKeys[k]].attributes
-            );
-            index = newAttrs.indexOf("style");
+            newAttrsKeys = Object.keys(newAttrs);
+            index = newAttrsKeys.indexOf("style");
             if (index > -1) {
               //Styles can only be set with `setStyles()`
-              newAttrs.splice(index, 1);
+              newAttrsKeys.splice(index, 1);
             }
-            index = newAttrs.indexOf("class");
+            index = newAttrsKeys.indexOf("class");
             if (index > -1) {
               //Classnames can only be set with `setClass()`
-              newAttrs.splice(index, 1);
+              newAttrsKeys.splice(index, 1);
             }
-            if (newAttrs.length > 0) {
+            if (newAttrsKeys.length > 0) {
               if (!element) {
                 element = findDomNode(
                   states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
@@ -973,28 +984,23 @@
                   states[ids[j]][symbolIdentifier].domNode
                 );
               }
-              current =
-                states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]]
-                  .attributes;
-              for (i = 0; i < newAttrs.length; i++) {
-                value =
-                  renderCycle.attributes[ids[j]][elementKeys[k]].attributes[
-                    newAttrs[i]
-                  ];
-                if (value != current[newAttrs[i]]) {
-                  current[newAttrs[i]] = value;
+              current =states[ids[j]][symbolIdentifier].keyedElements[elementKeys[k]].attributes;
+              for (i = 0; i < newAttrsKeys.length; i++) {
+                value =newAttrs[newAttrsKeys[i]];
+                if (value != current[newAttrsKeys[i]]) {
+                  current[newAttrsKeys[i]] = value;
                   if (typeof value == "string") {
-                    element.setAttribute(newAttrs[i], value);
+                    element.setAttribute(newAttrsKeys[i], value);
                   } else {
-                    element[newAttrs[i]] = value;
+                    element[newAttrsKeys[i]] = value;
                     index = states[ids[j]][symbolIdentifier].keyedElements[
                       elementKeys[k]
-                    ].listeningKeys.indexOf(newAttrs[i]);
+                    ].listeningKeys.indexOf(newAttrsKeys[i]);
                     if (index < 0) {
                       if (typeof value == "function") {
                         states[ids[j]][symbolIdentifier].keyedElements[
                           elementKeys[k]
-                        ].listeningKeys.push(newAttrs[i]);
+                        ].listeningKeys.push(newAttrsKeys[i]);
                       }
                     } else {
                       if (typeof value != "function") {
@@ -3311,10 +3317,15 @@
       }
       //Shedule for style updates if style values has changed.
       var currentNodeStyles = This[symbolIdentifier].keyedElements[key].styles;
-      var newStyles = hasValuesChanged({
-        ...currentNodeStyles,
-        ...renderCycle.attributes[componentId][key].styles
-      },styleObject);
+      var newStyles;
+      if(This[symbolIdentifier].styleChanged){
+        newStyles = {hasChanged:true}
+      }else{
+        newStyles = hasValuesChanged({
+          ...currentNodeStyles,
+          ...renderCycle.attributes[componentId][key].styles
+        },styleObject);
+      }
       if(newStyles.hasChanged){
         
         if (!renderCycle.renderingMode||This[symbolIdentifier].styleChanged) {
@@ -3378,7 +3389,17 @@
         };
       }
 
-      var newAttributes = hasValuesChanged(renderCycle.attributes[componentId][key].attributes,attrObject);
+      var currentNodeAttributes = This[symbolIdentifier].keyedElements[key].attributes;
+      
+      var newAttributes;
+      if(This[symbolIdentifier].attrChanged){
+        newAttributes = {hasChanged:true}
+      }else{
+        newAttributes = hasValuesChanged({
+          ...currentNodeAttributes,
+          ...renderCycle.attributes[componentId][key].attributes
+        },attrObject);
+      }
 
       if(newAttributes.hasChanged){
         
@@ -3388,7 +3409,6 @@
 
           //If we are currently not in a rendering process, shedule one and
           //register this component to be updated in the next rendering cycle.
-          This[symbolIdentifier].keyedElements[key].attributes = newAttributes.value;
           renderCycle.attributes[componentId][key].attributes = {
             ...renderCycle.attributes[componentId][key].attributes,
             ...attrObject
@@ -3413,11 +3433,11 @@
             //If component is already registered for next updates,
             //merge current style update value with the new style update value.
             if(!toNextCycle.attributes[componentId][key]){
-              toNextCycle.attributes[componentId][key] = {...styleObject};
+              toNextCycle.attributes[componentId][key] = {...attrObject};
             }else{
               toNextCycle.attributes[componentId][key] = {
                 ...toNextCycle.attributes[componentId][key],
-                ...styleObject
+                ...attrObject
               };
             }
             
