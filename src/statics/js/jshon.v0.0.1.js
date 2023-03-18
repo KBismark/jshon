@@ -29,7 +29,7 @@
   //This shall hold new updates during rendering mode. 
   //Those of such updates that can be merged in the current cycle
   //shall be merged
-  var toNextCycle = {exists:{},SACids:{},components:[null],args:{},styles:{},classes:{},attributes:{}};
+  var toNextCycle = {exists:{},SACids:{},components:{},args:{},styles:{},classes:{},attributes:{}};
   //This is hopefully to be used for safe writes and reads directly to and from the dom.
   var outOfScopeTasks = {
     write: [],
@@ -823,7 +823,18 @@
   }
   function serveQueue() {
     var next,
-      page = standAloneApps[symbolIdentifier].currentPage;
+      page = standAloneApps[symbolIdentifier].currentPage,index,i;
+      var toNextCycles = Object.values(toNextCycle.components);
+      renderCycle.register[null]=1;
+      for(i=0;i<toNextCycles.length;i++){
+        toNextCycles[i] = Number(toNextCycles[i]);
+        if (!renderCycle.register[toNextCycles[i]]) {
+          renderCycle.register[toNextCycles[i]] = toNextCycles[i];
+          renderCycle.queue.push(toNextCycles[i]);
+          renderCycle.update[toNextCycles[i]] = toNextCycles[i];
+        }
+        
+      }
     while (renderCycle.queue.length > 0) {
       next = renderCycle.queue.shift();
       if (states[next][symbolIdentifier].ownerPage == page) {
@@ -833,15 +844,33 @@
             ? renderCycle.refresh[next]
             : symbolIdentifier
         );
+        removeFromNextCycle(next);
       }
     }
-    for (var i = 0; i < outOfScopeTasks.write.length; i++) {
+    for (i = 0; i < outOfScopeTasks.write.length; i++) {
       outOfScopeTasks.write[i]();
     }
   }
   function callStyleClassAttrUpdater() {
     styleClassAttrUpdates.newpage = callStyleClassAttrUpdater.newpage;
     requestFrame(styleClassAttrUpdates);
+  }
+  function toNextActive(id){
+    return states[id][symbolIdentifier].styleChanged
+    &&states[id][symbolIdentifier].stateChanged
+    &&states[id][symbolIdentifier].classChanged
+    &&states[id][symbolIdentifier].attrChanged;
+  }
+  function removeFromNextCycle(id){
+    if(!toNextActive(id)&&toNextCycle.exists[id]){
+      toNextCycle.exists[id] = null;
+      toNextCycle.classes[id]=null;
+      toNextCycle.styles[id]=null;
+      toNextCycle.attributes[id]=null;
+      toNextCycle.components[id]=null;
+      delete toNextCycle.components[id];
+      delete toNextCycle.SACids[id];
+    }
   }
   function styleClassAttrUpdates() {
     var newpage = styleClassAttrUpdates.newpage;
@@ -1080,9 +1109,11 @@
           }
         }
       }
+      toNextCycle.SACids[ids[j]] = {};
+      removeFromNextCycle(ids[j]);
     }
     completeBatchUpdates(page);
-  }
+  };
   function completeBatchUpdates(page) {
     outOfScopeTasks.write = [];
     renderCycle.on = false;
@@ -1110,7 +1141,7 @@
       serveQueue();
     }
     callStyleClassAttrUpdater.newpage = newpage;
-    setTimeout(callStyleClassAttrUpdater, 4);
+    setTimeout(callStyleClassAttrUpdater, 1);
   }
 
   function findDomNode(positioningChainArray, domNode) {
@@ -1132,6 +1163,7 @@
       var clear = refresh || states[id][symbolIdentifier].destroy;
       if (clear || !states[id][symbolIdentifier].keepOnDetach) {
         var component = setNonEnumerableObjectProperty({}, symbolIdentifier, {
+          stateChanged:true,
           parent: 0,
           parentDNode: undefined,
           id: states[id][symbolIdentifier].id,
@@ -1337,6 +1369,7 @@
       {},
       symbolIdentifier,
       {
+        stateChanged:true,
         parent: 0,
         parentDNode: undefined,
         id: componentsCount,
@@ -1679,6 +1712,18 @@
       /** SetState calls must Render() without arguments */
       args = refresh ? args : undefined;
     }
+
+    //If component is stateful (has its state set), check if state is changed
+    if( states[componentsCount].state||states[componentsCount].sharedState){
+      if(!states[componentsCount][symbolIdentifier].stateChanged){
+        return setNonEnumerableObjectProperty(
+          {},
+          componentsIdentifier,
+          componentsCount
+        );
+      }
+      states[componentsCount][symbolIdentifier].stateChanged = false;
+    };
 
     var x, y, m;
     var append;
@@ -2628,7 +2673,6 @@
         }
       }
     }
-    //}
 
     return setNonEnumerableObjectProperty(
       {},
@@ -2775,6 +2819,7 @@
         {},
         symbolIdentifier,
         {
+          stateChanged:true,
           parent: 0,
           parentDNode: undefined,
           id: componentsCount,
@@ -3093,8 +3138,8 @@
         //We update this component after this cycle if and only if
         //this component is not among the current rendering components.
         if(!toNextCycle.exists[componentId]){
-          toNextCycle.exists[componentId] = toNextCycle.components.length;
-          toNextCycle.components.push(componentId);
+          toNextCycle.exists[componentId] = true;
+          toNextCycle.components[componentId]=componentId;
           toNextCycle.args[componentId] = null;
           toNextCycle.styles[componentId] = {};
           toNextCycle.classes[componentId] = {};
@@ -3103,8 +3148,7 @@
         }else{
           //Update the component's id value in the array. 
           //It might be null due to styles/classes/attributes updates
-          var componentPosition = toNextCycle.exists[componentId];
-          toNextCycle.components[componentPosition] = componentId;
+          toNextCycle.components[componentId] = componentId;
         }
       }
       
@@ -3282,8 +3326,8 @@
             //We update this component after this cycle if and only if
             //this component is not among the current rendering components.
             if(!toNextCycle.exists[componentId]){
-              toNextCycle.exists[componentId] = toNextCycle.components.length;
-              toNextCycle.components.push(null);
+              toNextCycle.exists[componentId] = true;
+              //toNextCycle.components[componentId] = false;
               toNextCycle.styles[componentId] = {};
               toNextCycle.attributes[componentId] = {};
               toNextCycle.classes[componentId] = {};
@@ -3358,7 +3402,7 @@
           //this component is not among the current rendering components.
           if(!toNextCycle.exists[componentId]){
             toNextCycle.exists[componentId] = toNextCycle.components.length;
-            toNextCycle.components.push(null);
+            //toNextCycle.components[componentId]=false;
             toNextCycle.classes[componentId] = {};
             toNextCycle.attributes[componentId] = {};
             toNextCycle.styles[componentId] = {};
@@ -3435,7 +3479,7 @@
           //this component is not among the current rendering components.
           if(!toNextCycle.exists[componentId]){
             toNextCycle.exists[componentId] = toNextCycle.components.length;
-            toNextCycle.components.push(null);
+             //toNextCycle.components[componentId]=false;
             toNextCycle.classes[componentId] = {};
             toNextCycle.attributes[componentId] = {};
             toNextCycle.attributes[componentId][key] = {...attrObject};
